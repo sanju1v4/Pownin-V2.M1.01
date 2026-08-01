@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Pawnin Notes",
+    "slug": "pawnin-notes",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F4F1E9",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pawnin.notes",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Pawnin Notes records the meeting you are holding the button through.",
+        "UIBackgroundModes": ["audio"],
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "package": "com.pawnin.notes",
+      "usesCleartextTraffic": true,
+      "permissions": ["android.permission.RECORD_AUDIO"],
+      "adaptiveIcon": {
+        "backgroundColor": "#F4F1E9",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Pawnin Notes records the meeting you are holding the button through."
+        }
+      ]
+    ]
+  }
+}

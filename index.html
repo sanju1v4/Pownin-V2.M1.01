@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pawnin Notes</title>
+<style>
+  :root {
+    --ink:    #1A1614;
+    --paper:  #FFFDF7;
+    --page:   #FFF6E8;
+    --ember:  #FF6B35;
+    --muted:  #F0E4CE;
+    --grey:   #5C554E;
+    --label:  #8A8178;
+    --fill:   #FFF1E8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding: 28px 22px 40px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { font-size: 30px; font-weight: 800; letter-spacing: -0.5px; margin: 0; }
+  .sub { font-size: 13px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--label); }
+
+  /* ---- status band ---- */
+  .status { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 18px 0 10px; }
+  .banner { font-size: 23px; font-weight: 800; letter-spacing: -0.3px; }
+  .timer { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 30px; font-weight: 700; letter-spacing: -1px; }
+  .track { height: 12px; border: 3px solid var(--ink); border-radius: 8px; background: var(--muted); overflow: hidden; }
+  .track > i { display: block; height: 100%; width: 0; background: var(--ink); transition: width .25s ease; }
+  .sublabel { margin-top: 7px; font-size: 13px; font-weight: 700; color: var(--grey); min-height: 17px; }
+  .err { margin-top: 10px; font-size: 15px; font-weight: 700; color: var(--ink);
+         background: var(--fill); border: 3px solid var(--ember); border-radius: 12px; padding: 10px 14px; }
+  [hidden] { display: none !important; }
+
+  /* ---- panes, side by side ---- */
+  .panes { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 26px; }
+  @media (max-width: 820px) { .panes { grid-template-columns: 1fr; gap: 34px; } }
+
+  .pane { position: relative; background: var(--paper);
+          border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 8px 0 var(--ink); }
+  .pane.accent { background: var(--fill); border-color: var(--ember); box-shadow: 0 8px 0 var(--ember); }
+
+  .badge { position: absolute; top: -15px; left: 18px; background: var(--ink); color: var(--paper);
+           border-radius: 13px; padding: 4px 12px; font-size: 12px; font-weight: 800; letter-spacing: 1.2px; }
+  .pane.accent .badge { background: var(--ember); border: 3px solid var(--ink); }
+
+  .play { position: absolute; top: -16px; right: 18px; display: inline-flex; align-items: center; gap: 7px;
+          background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 14px;
+          padding: 4px 12px; font: inherit; font-size: 12px; font-weight: 800; letter-spacing: 1px;
+          cursor: pointer; }
+  .pane.accent .play { color: var(--ember); border-color: var(--ember); }
+  .play:disabled { opacity: .35; cursor: default; }
+  .play .glyph { font-size: 11px; line-height: 1; }
+
+  .notes { padding: 26px 20px 20px; font-size: 15px; line-height: 24px; color: var(--grey);
+           height: 46vh; min-height: 240px; overflow-y: auto; white-space: pre-wrap; }
+  .pane.accent .notes { color: var(--ink); }
+  .placeholder { font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+                 color: var(--label); margin-bottom: 14px; }
+  .bar { height: 13px; border-radius: 7px; background: var(--muted); margin-bottom: 9px; }
+
+  /* ---- record button ---- */
+  .recwrap { margin: 40px auto 0; max-width: 460px; }
+  #rec { display: block; width: 100%; padding: 22px 0; background: var(--paper); color: var(--ink);
+         border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 8px 0 var(--ink);
+         font: inherit; font-size: 21px; font-weight: 800; letter-spacing: 2px; cursor: pointer; }
+  #rec.live { background: var(--ink); color: var(--paper); }
+  #rec:disabled { opacity: .4; cursor: default; }
+  #rec:active:not(:disabled) { transform: translateY(6px); box-shadow: 0 2px 0 var(--ink); }
+  .hint { margin-top: 14px; text-align: center; font-size: 12px; font-weight: 700;
+          letter-spacing: 1px; text-transform: uppercase; color: var(--label); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Pawnin Notes</h1>
+    <span class="sub">raw vs denoised</span>
+  </header>
+
+  <div class="status">
+    <div class="banner" id="banner">Press record and talk</div>
+    <div class="timer" id="timer" hidden>00:00</div>
+  </div>
+  <div class="track" id="track" hidden><i id="fill"></i></div>
+  <div class="sublabel" id="sublabel"></div>
+  <div class="err" id="err" hidden></div>
+
+  <div class="panes">
+    <section class="pane" id="pane-raw">
+      <span class="badge">RAW</span>
+      <button class="play" id="play-raw" disabled>
+        <span class="glyph">&#9654;</span><span class="txt">PLAY</span>
+      </button>
+      <div class="notes" id="notes-raw">
+        <div class="placeholder">Record something to see the raw notes</div>
+        <div class="bar" style="width:92%"></div><div class="bar" style="width:76%"></div>
+        <div class="bar" style="width:85%"></div><div class="bar" style="width:61%"></div>
+      </div>
+    </section>
+
+    <section class="pane accent" id="pane-enh">
+      <span class="badge">ENHANCED</span>
+      <button class="play" id="play-enh" disabled>
+        <span class="glyph">&#9654;</span><span class="txt">PLAY</span>
+      </button>
+      <div class="notes" id="notes-enh">
+        <div class="placeholder">The enhanced notes appear here</div>
+        <div class="bar" style="width:88%"></div><div class="bar" style="width:64%"></div>
+        <div class="bar" style="width:80%"></div><div class="bar" style="width:70%"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="recwrap">
+    <button id="rec">HOLD OR CLICK TO RECORD</button>
+    <div class="hint" id="hint">microphone required</div>
+  </div>
+</div>
+
+<audio id="audio-raw" preload="none"></audio>
+<audio id="audio-enh" preload="none"></audio>
+
+<script>
+(function () {
+  'use strict';
+
+  var CHUNK = 64 * 1024;          // multiple of 4 -> every chunk decodes alone
+  var MAX_SECONDS = 600;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var banner = $('banner'), timerEl = $('timer'), track = $('track'), fill = $('fill');
+  var sublabel = $('sublabel'), errEl = $('err'), recBtn = $('rec'), hint = $('hint');
+
+  var STAGE_LABELS = {
+    decoded: 'Audio decoded',
+    enhancing: 'Removing noise',
+    transcribing: 'Transcribing enhanced audio'
+  };
+
+  var phase = 'idle';             // idle|recording|uploading|processing|done|error
+  var media = null, stream = null, blobParts = [];
+  var ws = null, ticker = null, startedAt = 0, mimeExt = 'webm';
+
+  // ---------------------------------------------------------------- helpers
+  function clock(s) {
+    s = Math.max(0, Math.floor(s));
+    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  // Relative, so the page works unchanged on the LAN and behind a tunnel.
+  function wsUrl() {
+    return (location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws';
+  }
+
+  // The server builds clip URLs from its own LAN address, which a tunnelled
+  // visitor cannot reach. Keep only the path and re-root it on this origin.
+  function sameOrigin(u) {
+    try { var p = new URL(u, location.href); return p.pathname + p.search; }
+    catch (e) { return u; }
+  }
+
+  function setPhase(p) {
+    phase = p;
+    var live = p === 'recording';
+    var busy = p === 'uploading' || p === 'processing';
+    recBtn.classList.toggle('live', live);
+    recBtn.disabled = busy;
+    recBtn.textContent = live ? 'STOP' : busy ? 'WORKING...' : 'HOLD OR CLICK TO RECORD';
+    timerEl.hidden = !(live || busy);
+    track.hidden = !(busy || p === 'done');
+  }
+
+  function showError(msg) {
+    errEl.textContent = msg;
+    errEl.hidden = false;
+    banner.textContent = 'Error';
+    setPhase('error');
+    stopTicking();
+  }
+
+  function startTicking() {
+    startedAt = Date.now();
+    timerEl.textContent = '00:00';
+    stopTicking();
+    ticker = setInterval(function () {
+      var s = (Date.now() - startedAt) / 1000;
+      timerEl.textContent = clock(s);
+      if (phase === 'recording' && s >= MAX_SECONDS) stop();
+    }, 250);
+  }
+  function stopTicking() { if (ticker) clearInterval(ticker); ticker = null; }
+
+  function setNotes(which, text) {
+    var el = $('notes-' + which);
+    el.textContent = text;
+    el.scrollTop = 0;
+  }
+
+  // ------------------------------------------------------------- recording
+  function pickMime() {
+    var candidates = [
+      'audio/webm;codecs=opus', 'audio/webm',
+      'audio/mp4;codecs=mp4a.40.2', 'audio/mp4',
+      'audio/ogg;codecs=opus', 'audio/ogg'
+    ];
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    for (var i = 0; i < candidates.length; i++) {
+      if (MediaRecorder.isTypeSupported(candidates[i])) return candidates[i];
+    }
+    return '';
+  }
+
+  function extFor(mime) {
+    if (!mime) return 'webm';
+    if (mime.indexOf('webm') >= 0) return 'webm';
+    if (mime.indexOf('mp4') >= 0) return 'm4a';
+    if (mime.indexOf('ogg') >= 0) return 'ogg';
+    return 'webm';
+  }
+
+  async function start() {
+    if (phase === 'recording' || phase === 'uploading' || phase === 'processing') return;
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      showError('This browser has no MediaRecorder. Use Chrome, Edge, Firefox or Safari 14+.');
+      return;
+    }
+    errEl.hidden = true;
+    sublabel.textContent = '';
+    fill.style.width = '0';
+    setNotesPlaceholder();
+    resetPlayers();
+
+    try {
+      // Every browser DSP stays OFF. Chrome enables noise suppression and AGC
+      // by default -- leaving them on would denoise the audio before the RAW
+      // pane ever sees it, and the whole comparison would be a lie.
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          noiseSuppression: false,
+          echoCancellation: false,
+          autoGainControl: false
+        }
+      });
+    } catch (e) {
+      showError('Microphone blocked: ' + (e && e.message ? e.message : e) +
+                '. On a plain http:// origin only localhost is allowed -- use the tunnel URL.');
+      return;
+    }
+
+    var mime = pickMime();
+    mimeExt = extFor(mime);
+    try {
+      media = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    } catch (e) {
+      showError('MediaRecorder refused this format: ' + (e && e.message ? e.message : e));
+      return;
+    }
+
+    blobParts = [];
+    media.ondataavailable = function (ev) { if (ev.data && ev.data.size) blobParts.push(ev.data); };
+    media.onerror = function (ev) { showError('Recorder error: ' + ev.error); };
+    media.onstop = function () {
+      releaseStream();
+      var blob = new Blob(blobParts, { type: media.mimeType || 'audio/webm' });
+      var held = (Date.now() - startedAt) / 1000;
+      if (held < 0.7 || blob.size === 0) {
+        banner.textContent = 'Press record and talk';
+        setPhase('idle');
+        stopTicking();
+        return;
+      }
+      console.log('[rec] ' + held.toFixed(1) + 's, ' + blob.size + ' bytes, ' + blob.type);
+      upload(blob);
+    };
+
+    media.start();
+    banner.textContent = 'Recording';
+    setPhase('recording');
+    startTicking();
+  }
+
+  function stop() {
+    if (phase !== 'recording' || !media) return;
+    stopTicking();
+    try { media.stop(); } catch (e) { showError('Could not stop: ' + e.message); }
+  }
+
+  function releaseStream() {
+    if (!stream) return;
+    stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = null;
+  }
+
+  // --------------------------------------------------------------- upload
+  function blobToBase64(blob) {
+    // FileReader handles multi-megabyte blobs natively; btoa on a manually
+    // built binary string blows the argument limit well before 3 minutes.
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var s = String(fr.result);
+        var comma = s.indexOf(',');
+        resolve(comma >= 0 ? s.slice(comma + 1) : '');
+      };
+      fr.onerror = function () { reject(fr.error || new Error('read failed')); };
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  async function upload(blob) {
+    setPhase('uploading');
+    banner.textContent = 'Uploading';
+    startTicking();
+
+    var b64;
+    try { b64 = await blobToBase64(blob); }
+    catch (e) { showError('Could not read the recording: ' + e.message); return; }
+
+    try { ws = new WebSocket(wsUrl()); }
+    catch (e) { showError('Could not open ' + wsUrl() + ': ' + e.message); return; }
+    var mine = ws;
+
+    ws.onopen = async function () {
+      try {
+        mine.send(JSON.stringify({ type: 'start', ext: mimeExt }));
+        for (var i = 0; i < b64.length; i += CHUNK) {
+          if (ws !== mine) return;
+          mine.send(b64.slice(i, i + CHUNK));
+          var pct = Math.min(100, Math.round(((i + CHUNK) / b64.length) * 100));
+          fill.style.width = pct + '%';
+          sublabel.textContent = 'sending audio - ' + pct + '%';
+          banner.textContent = 'Uploading  ' + pct + '%';
+          await new Promise(function (r) { setTimeout(r, 0); });
+        }
+        mine.send(JSON.stringify({ type: 'end' }));
+        fill.style.width = '100%';
+        setPhase('processing');
+        banner.textContent = 'Uploaded, waiting for the server';
+        sublabel.textContent = 'the raw pass finishes first';
+        fill.style.width = '0';
+        startTicking();
+      } catch (e) {
+        showError('Upload failed: ' + e.message);
+      }
+    };
+
+    ws.onmessage = function (ev) {
+      var msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+
+      if (msg.type === 'error') {
+        showError(msg.message || 'The server reported an error.');
+        try { mine.close(); } catch (e) {}
+        return;
+      }
+
+      if (msg.type === 'status') {
+        if (typeof msg.stage === 'string') {
+          var label = STAGE_LABELS[msg.stage] ||
+                      (msg.stage.charAt(0).toUpperCase() + msg.stage.slice(1));
+          banner.textContent = label;
+          sublabel.textContent = label.toLowerCase() + ' - ' + (msg.pct || 0) + '%';
+        }
+        if (typeof msg.pct === 'number') fill.style.width = msg.pct + '%';
+      }
+
+      // Paint whatever landed, on whichever frame carries it. The raw pass
+      // finishes well before the enhanced one.
+      if (typeof msg.raw_notes === 'string' && msg.raw_notes) setNotes('raw', msg.raw_notes);
+      if (typeof msg.enhanced_notes === 'string' && msg.enhanced_notes) setNotes('enh', msg.enhanced_notes);
+      if (typeof msg.raw_audio_url === 'string') attach('raw', msg.raw_audio_url);
+      if (typeof msg.enhanced_audio_url === 'string') attach('enh', msg.enhanced_audio_url);
+
+      if (msg.type === 'result') {
+        fill.style.width = '100%';
+        banner.textContent = typeof msg.ms === 'number'
+          ? 'Done in ' + (msg.ms / 1000).toFixed(1) + 's'
+          : 'Done';
+        sublabel.textContent = 'both passes complete - press play to compare';
+        setPhase('done');
+        stopTicking();
+        try { mine.close(); } catch (e) {}
+      }
+    };
+
+    ws.onerror = function () {
+      if (ws !== mine) return;
+      if (phase !== 'uploading' && phase !== 'processing') return;
+      showError('Lost the connection to ' + wsUrl() + '. Is the server running?');
+    };
+
+    ws.onclose = function () {
+      if (ws !== mine) return;
+      if (phase === 'uploading' || phase === 'processing') {
+        showError('The server closed the connection before sending results.');
+      }
+    };
+  }
+
+  // ------------------------------------------------------------- playback
+  var players = {
+    raw: { audio: $('audio-raw'), btn: $('play-raw') },
+    enh: { audio: $('audio-enh'), btn: $('play-enh') }
+  };
+
+  function paint(which) {
+    var p = players[which];
+    var playing = !p.audio.paused && !p.audio.ended && p.audio.currentTime > 0;
+    p.btn.querySelector('.glyph').innerHTML = playing ? '&#9632;' : '&#9654;';
+    p.btn.querySelector('.txt').textContent = playing ? 'STOP' : 'PLAY';
+  }
+
+  function attach(which, url) {
+    var p = players[which];
+    var next = sameOrigin(url);
+    if (p.audio.getAttribute('src') !== next) p.audio.setAttribute('src', next);
+    p.btn.disabled = false;
+    paint(which);
+  }
+
+  function resetPlayers() {
+    ['raw', 'enh'].forEach(function (w) {
+      var p = players[w];
+      try { p.audio.pause(); } catch (e) {}
+      p.audio.removeAttribute('src');
+      p.audio.load();
+      p.btn.disabled = true;
+      paint(w);
+    });
+  }
+
+  Object.keys(players).forEach(function (which) {
+    var p = players[which];
+    var other = players[which === 'raw' ? 'enh' : 'raw'];
+
+    p.btn.addEventListener('click', function () {
+      if (!p.audio.getAttribute('src')) return;
+      if (!p.audio.paused) { p.audio.pause(); paint(which); return; }
+      // one clip at a time, or the A/B turns into a duet
+      try { other.audio.pause(); other.audio.currentTime = 0; } catch (e) {}
+      if (p.audio.ended) p.audio.currentTime = 0;
+      p.audio.play().catch(function (e) {
+        showError('Playback failed: ' + (e && e.message ? e.message : e));
+      });
+    });
+
+    ['play', 'pause', 'ended', 'timeupdate'].forEach(function (evt) {
+      p.audio.addEventListener(evt, function () { paint(which); paint(which === 'raw' ? 'enh' : 'raw'); });
+    });
+  });
+
+  function setNotesPlaceholder() {
+    setNotes('raw', '');
+    setNotes('enh', '');
+    $('notes-raw').innerHTML =
+      '<div class="placeholder">The raw pass lands first</div>' +
+      '<div class="bar" style="width:92%"></div><div class="bar" style="width:76%"></div>' +
+      '<div class="bar" style="width:85%"></div><div class="bar" style="width:61%"></div>';
+    $('notes-enh').innerHTML =
+      '<div class="placeholder">Still cleaning the audio</div>' +
+      '<div class="bar" style="width:88%"></div><div class="bar" style="width:64%"></div>' +
+      '<div class="bar" style="width:80%"></div><div class="bar" style="width:70%"></div>';
+  }
+
+  // ---------------------------------------------------------------- wiring
+  // Click toggles; press-and-hold also works, matching the phone app.
+  var heldDown = false;
+  recBtn.addEventListener('pointerdown', function () {
+    if (phase === 'recording') return;
+    heldDown = true;
+    start();
+  });
+  recBtn.addEventListener('pointerup', function () {
+    // a real hold stops on release; a quick click leaves it running
+    if (heldDown && phase === 'recording' && (Date.now() - startedAt) > 500) stop();
+    heldDown = false;
+  });
+  recBtn.addEventListener('click', function () {
+    if (phase === 'recording' && (Date.now() - startedAt) <= 500) return; // the click that started it
+    if (phase === 'recording') stop();
+  });
+
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    hint.textContent = 'this browser cannot record';
+    recBtn.disabled = true;
+  } else if (!window.isSecureContext) {
+    hint.textContent = 'insecure origin - the mic needs https or localhost';
+  }
+
+  setPhase('idle');
+})();
+</script>
+</body>
+</html>

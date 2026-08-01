@@ -1,0 +1,151 @@
+# Clean Notes
+
+**Meeting notes that survive a loud room.**
+
+Every voice AI demo is recorded in a quiet office. Real conversations happen in cafés, lobbies and
+co-working spaces — and that's where transcription quietly falls apart. Not by producing gibberish you'd
+notice, but by producing clean, plausible, *incomplete* notes. Sentences go missing. Nobody checks,
+because the output looks fine.
+
+This records a conversation, runs it through a speech enhancement model before transcription, and shows
+you both versions side by side. Same audio, same transcriber, same cleanup prompt. One passes through a
+denoiser first.
+
+Built in one day at the 8x Mobile Hack, Berlin.
+
+---
+
+## The result
+
+Enhancement doesn't make the best case better. It removes the worst case.
+
+| | mean WER | spread across runs | notes length |
+|---|---|---|---|
+| Raw | 30.1% | **8.0%** | 1326–1622 chars |
+| Enhanced | 27.0% | **1.9%** | 1522–1628 chars |
+
+Three transcription passes over the same 2:44 recording at 3 dB SNR.
+
+The mean improves by 3.2 points, which is real but modest. The interesting number is the spread. Raw
+transcription is *unstable* — the same audio, transcribed three times, ranged over eight points and on
+its worst run silently dropped ~300 characters of the conversation. Enhanced stayed within a two-point
+band and never collapsed.
+
+For meeting notes that's the difference that matters. You don't get to re-run a meeting.
+
+Honest caveats, since they change how you should read the table: this is a small sample on synthetic
+audio at a friendly SNR, `gpt-4o-transcribe` is non-deterministic, and enhancement narrows the gap
+without closing it — some turns are lost on both paths.
+
+---
+
+## Architecture
+
+```
+iPhone microphone
+    │  AVAudioRecorder — .playAndRecord, .default mode, no voice processing
+    │  16 kHz mono m4a
+    ▼
+base64 chunks over WebSocket
+    │
+    ▼
+ffmpeg decode → 16 kHz mono PCM
+    │
+    ├─ raw ──────────────────────────┐
+    │                                 │
+    └─ DPDFNet (dpdfnet4) ────────┐   │
+                                  ▼   ▼
+                          gpt-4o-transcribe
+                                  │
+                                  ▼
+                        LLM cleanup (identical prompt)
+                                  │
+                                  ▼
+                     RAW notes  │  ENHANCED notes
+```
+
+**Nothing else touches the audio.** No platform voice processing, no AGC, no noise suppression on either
+path — verified by reading `expo-audio`'s iOS sources. The only difference between the two paths is
+DPDFNet. That's what makes the comparison honest.
+
+### Two decisions worth explaining
+
+**The raw path runs concurrently with enhancement.** Raw transcription doesn't need the denoised audio,
+so it overlaps the 61-second enhance instead of queueing behind it — and its notes are pushed to the
+phone the moment they're ready, roughly 60 seconds before the enhanced ones. You watch the raw notes
+arrive, read them, and then see what was missing.
+
+**Enhancement runs on the laptop, not the phone.** DPDFNet is causal and could stream, but on-device
+means converting a model with persistent recurrent state to CoreML — weeks of work, not hours. Over
+local wifi the round trip is invisible.
+
+---
+
+## Performance
+
+Measured on a 2:44 recording:
+
+| Stage | Time |
+|---|---|
+| Enhancement (DPDFNet, RTF 0.37) | 61 s |
+| Raw transcribe + cleanup | overlapped, free |
+| Enhanced transcribe + cleanup | 13 s |
+| **Total round trip** | **74 s** |
+| Raw notes on screen | 13 s |
+
+---
+
+## Stack
+
+- **Phone** — Expo SDK 54, React Native, TypeScript, `expo-audio`
+- **Server** — FastAPI, WebSocket, ffmpeg
+- **Enhancement** — [DPDFNet](https://github.com/ceva-ip/DPDFNet) (Apache-2.0), PyTorch, 16 kHz
+- **Transcription and cleanup** — OpenAI
+
+---
+
+## Running it
+
+```bash
+pip install torch torchaudio soundfile numpy jiwer fastapi uvicorn
+git clone https://github.com/ceva-ip/DPDFNet
+# weights: huggingface.co/Ceva-IP/DPDFNet  → dpdfnet4, 16 kHz
+
+echo "OPENAI_API_KEY=sk-..." > .env
+python server.py          # prints the LAN URL it binds to
+```
+
+```bash
+npx expo start            # set SERVER_URL in App.tsx to that LAN address
+```
+
+Benchmark against your own recordings:
+
+```bash
+python bench.py           # WER raw vs enhanced, per clip and mean
+```
+
+---
+
+## What we learned
+
+**The failure mode isn't garbled text.** We expected noisy audio to produce obvious nonsense. It
+mostly produces confident, well-formed sentences with content quietly missing — which is far worse,
+because nothing signals that you should check.
+
+**One sample is a coin flip.** Our first side-by-side looked dramatic. Repeating it three times showed
+the run-to-run variance of the transcriber was larger than the effect we were measuring. The reliability
+story only appeared once we stopped trusting a single run.
+
+**Most of the day went on the microphone, not the model.** A recording that reported a valid duration
+still produced a file with no `moov` atom, because iOS hadn't finished writing the container when we read
+it. The device now validates duration and file settlement before uploading, so a dead recording fails on
+the phone in a second instead of on the server ninety seconds later.
+
+---
+
+## Next
+
+- Real recordings in real rooms — the numbers above are synthetic and friendly
+- On-device enhancement via CoreML, for a pipeline with no server at all
+- Streaming rather than clip-based, now that RTF < 1 is confirmed
