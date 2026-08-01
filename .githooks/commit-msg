@@ -1,0 +1,29 @@
+#!/bin/sh
+# Strip AI attribution trailers from every commit message.
+#
+# Git passes the path to the pending message as $1. Editing that file in place
+# is enough -- the commit is recorded from whatever this leaves behind.
+#
+# Committed rather than dropped in .git/hooks so it travels with the repo.
+# Each clone has to opt in once:
+#
+#     git config core.hooksPath .githooks
+#
+set -e
+
+msg="$1"
+[ -f "$msg" ] || exit 0
+tmp="$msg.strip"
+
+# -I makes the match case-insensitive (GNU sed, which git ships on Windows).
+sed -e '/^[[:space:]]*Co-Authored-By:[[:space:]]*Claude/Id' \
+    -e '/Generated with .*Claude Code/Id' \
+    -e '/^[[:space:]]*🤖[[:space:]]*Generated with/d' \
+    "$msg" > "$tmp"
+
+# Removing a trailer leaves a dangling blank line or two; print buffered blanks
+# only when real content follows, which drops the trailing ones.
+awk 'NF { while (blank-- > 0) print ""; blank = 0; print; next } { blank++ }' \
+    "$tmp" > "$msg"
+
+rm -f "$tmp"
